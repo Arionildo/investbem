@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calculadora de Investimentos</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            padding: 20px;
+        }
+        .container {
+            width: 600px;
+            margin: 0 auto;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        .section {
+            margin-bottom: 20px;
+        }
+        .section input, .section button, .section select {
+            padding: 10px;
+            margin: 5px 0;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .result {
+            background-color: #e0e0e0;
+            padding: 10px;
+            margin-top: 20px;
+            border-radius: 8px;
+        }
+        .result p {
+            margin: 5px 0;
+        }
+        .asset-list {
+            margin-top: 10px;
+        }
+        .asset-item {
+            padding: 5px;
+            margin: 5px 0;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+        }
+        .asset-item button {
+            background-color: #ff5c5c;
+            color: white;
+            border: none;
+            padding: 5px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .asset-item button:hover {
+            background-color: #e04e4e;
+        }
+        .tab-container {
+            display: flex;
+            margin-top: 20px;
+        }
+        .tab {
+            padding: 10px;
+            cursor: pointer;
+            background-color: #f0f0f0;
+            margin-right: 10px;
+            border-radius: 5px;
+        }
+        .tab:hover {
+            background-color: #d0d0d0;
+        }
+        .tab.active {
+            background-color: #ddd;
+        }
+        .tab-content {
+            display: none;
+            padding: 10px;
+            background-color: #f9f9f9;
+            border-radius: 8px;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .currency-info {
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Calculadora de Investimentos</h1>
+
+    <div class="currency-info">
+        <label for="dolar-value">Valor do Dólar (R$):</label>
+        <input type="number" id="dolar-value" value="6.05" step="0.01" />
+    </div>
+
+    <div id="investment-types">
+        <div class="section">
+            <h3>Cadastro de Tipo de Investimento</h3>
+            <label for="investment-type">Tipo de Investimento (Ex: ETF, REIT):</label>
+            <input type="text" id="investment-type" placeholder="Nome do Tipo de Investimento">
+
+            <label for="investment-value">Valor a investir (em reais):</label>
+            <input type="number" id="investment-value" placeholder="Valor para investir">
+
+            <button onclick="addInvestmentType()">Adicionar Tipo de Investimento</button>
+        </div>
+    </div>
+
+    <div id="assets-container"></div>
+
+    <button onclick="clearData()">Limpar Tudo</button>
+
+    <div class="result" id="result"></div>
+</div>
+
+<script>
+    let dolarValue = parseFloat(document.getElementById('dolar-value').value); // Valor do dólar em reais
+    const investmentContainer = document.getElementById('assets-container');
+    let investmentTypes = JSON.parse(localStorage.getItem("investmentTypes")) || [];
+
+    // Atualiza o valor do dólar e recalcula os valores de investimento
+    document.getElementById('dolar-value').addEventListener('input', (event) => {
+        dolarValue = parseFloat(event.target.value);
+        updateInvestmentValues();
+    });
+
+    // Função para pegar a cotação do dólar
+    function fetchDollarRate() {
+        const date = new Date();
+        const formattedDate = `${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}-${date.getFullYear()}`;
+        const url = `https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/odata/CotacaoDolarDia(dataCotacao=@dataCotacao)?%40dataCotacao='${formattedDate}'&%24format=json`;
+
+        fetch(url)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Erro na requisição: ' + response.statusText);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.value && data.value[0]) {
+                    dolarValue = parseFloat(data.value[0].cotacaoCompra);
+                    document.getElementById('dolar-value').value = dolarValue.toFixed(2);
+                    updateInvestmentValues();
+                } else {
+                    console.error("Erro ao obter a cotação do dólar.");
+                }
+            })
+            .catch(error => {
+                console.error("Erro ao buscar cotação do dólar:", error);
+            });
+    }
+
+    // Atualiza os tipos de investimento no localStorage
+    function saveToLocalStorage() {
+        localStorage.setItem("investmentTypes", JSON.stringify(investmentTypes));
+    }
+
+    function clearData() {
+        localStorage.removeItem("investmentTypes");
+        investmentTypes = [];
+        renderInvestmentTypes();
+    }
+
+    function addInvestmentType() {
+        const typeName = document.getElementById("investment-type").value.toUpperCase(); // Converter para maiúsculo
+        const typeValue = parseFloat(document.getElementById("investment-value").value);
+
+        if (!typeName || isNaN(typeValue)) {
+            alert("Preencha todos os campos corretamente!");
+            return;
+        }
+
+        investmentTypes.push({ typeName, typeValue, assets: [] });
+
+        document.getElementById("investment-type").value = '';
+        document.getElementById("investment-value").value = '';
+
+        saveToLocalStorage();
+        renderInvestmentTypes();
+    }
+
+    function renderInvestmentTypes() {
+        const container = document.getElementById("assets-container");
+        container.innerHTML = '';
+
+        investmentTypes.forEach((investmentType, index) => {
+            const tabButton = document.createElement("div");
+            tabButton.classList.add("tab");
+            tabButton.textContent = investmentType.typeName; // Nome em maiúsculo
+            tabButton.onclick = () => showTabContent(index);
+            tabButton.setAttribute("data-index", index);
+
+            const tabContent = document.createElement("div");
+            tabContent.classList.add("tab-content");
+            tabContent.setAttribute("id", `tab-content-${index}`);
+            tabContent.innerHTML = `
+                <h3>Ativos do Tipo: ${investmentType.typeName}</h3>
+                
+                <label for="investment-value-${index}">Valor Total a Investir:</label>
+                <input type="number" id="investment-value-${index}" value="${investmentType.typeValue}" step="0.01" 
+                onchange="updateTotalInvestmentValue(${index})" />
+
+                <div class="section">
+                    <label for="asset-name-${index}">Nome do Ativo:</label>
+                    <input type="text" id="asset-name-${index}" placeholder="Nome do Ativo">
+                </div>
+
+                <div class="section">
+                    <label for="asset-note-${index}">Nota do Ativo (0-10):</label>
+                    <input type="number" id="asset-note-${index}" min="0" max="10" placeholder="Nota do Ativo">
+                </div>
+                
+                <button onclick="addAsset(${index})">Adicionar Ativo</button>
+                
+                <button onclick="sortAssetsByNote(${index})">Ordenar por Nota</button>
+                <button onclick="sortAssetsByName(${index})">Ordenar por Nome</button>
+
+                <div class="asset-list" id="asset-list-${index}">
+                    ${renderAssets(investmentType.assets, index)}
+                </div>
+            `;
+
+            container.appendChild(tabButton);
+            container.appendChild(tabContent);
+        });
+
+        if (investmentTypes.length > 0) {
+            showTabContent(0); // Exibe o primeiro tipo de investimento por padrão
+        }
+    }
+
+    function showTabContent(index) {
+        const allTabs = document.querySelectorAll(".tab");
+        const allContents = document.querySelectorAll(".tab-content");
+
+        allTabs.forEach(tab => tab.classList.remove("active"));
+        allContents.forEach(content => content.classList.remove("active"));
+
+        document.querySelector(`[data-index="${index}"]`).classList.add("active");
+        document.getElementById(`tab-content-${index}`).classList.add("active");
+    }
+
+    function addAsset(index) {
+        const assetName = document.getElementById(`asset-name-${index}`).value.toUpperCase(); // Converter para maiúsculo
+        const assetNote = parseFloat(document.getElementById(`asset-note-${index}`).value);
+
+        if (!assetName || isNaN(assetNote)) {
+            alert("Preencha todos os campos corretamente!");
+            return;
+        }
+
+        investmentTypes[index].assets.push({ assetName, assetNote });
+
+        // Ordena os ativos por nota de forma automática após adicionar
+        investmentTypes[index].assets.sort((a, b) => b.assetNote - a.assetNote); 
+
+        // Atualiza o armazenamento local e a renderização
+        saveToLocalStorage();
+        renderInvestmentTypes();
+        updateInvestmentValues(); // Recalcular os valores após cada adição
+    }
+
+    function updateTotalInvestmentValue(index) {
+        const newTotalValue = parseFloat(document.getElementById(`investment-value-${index}`).value);
+
+        if (!isNaN(newTotalValue)) {
+            investmentTypes[index].typeValue = newTotalValue;
+
+            // Atualiza o armazenamento local e os valores dos ativos
+            saveToLocalStorage();
+            updateInvestmentValues();
+        }
+    }
+
+    function sortAssetsByNote(index) {
+        investmentTypes[index].assets.sort((a, b) => b.assetNote - a.assetNote); // Ordenar por nota
+        saveToLocalStorage();
+        renderInvestmentTypes(); // Re-renderizar a lista de ativos
+    }
+
+    function sortAssetsByName(index) {
+        investmentTypes[index].assets.sort((a, b) => a.assetName.localeCompare(b.assetName)); // Ordenar por nome
+        saveToLocalStorage();
+        renderInvestmentTypes(); // Re-renderizar a lista de ativos
+    }
+
+    function renderAssets(assets, index) {
+        return assets.map(asset => {
+            const totalValue = investmentTypes[index].typeValue;
+            const totalNotes = assets.reduce((sum, asset) => sum + asset.assetNote, 0);
+            const assetValueReais = (asset.assetNote / totalNotes) * totalValue;
+            const assetValueDollars = assetValueReais / dolarValue;
+
+            return `
+                <div class="asset-item">
+                    <p><strong>Ativo:</strong> ${asset.assetName} (Nota: ${asset.assetNote})</p>
+                    <p><strong>Valor a investir:</strong> R$ ${assetValueReais.toFixed(2)} (em reais)</p>
+                    <p><strong>Valor a investir:</strong> $ ${assetValueDollars.toFixed(2)} (em dólares)</p>
+                    <button onclick="removeAsset(${index}, '${asset.assetName}')">Remover</button>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function removeAsset(index, assetName) {
+        const assetIndex = investmentTypes[index].assets.findIndex(asset => asset.assetName === assetName);
+        if (assetIndex > -1) {
+            investmentTypes[index].assets.splice(assetIndex, 1);
+            saveToLocalStorage();
+            renderInvestmentTypes(); // Re-renderizar a lista de ativos após remoção
+            updateInvestmentValues(); // Recalcular os valores após remoção
+        }
+    }
+
+    function updateInvestmentValues() {
+        investmentTypes.forEach((investmentType, index) => {
+            const assetList = document.getElementById(`asset-list-${index}`);
+            assetList.innerHTML = renderAssets(investmentType.assets, index);
+        });
+    }
+
+    window.onload = function() {
+        renderInvestmentTypes(); // Carregar os tipos e ativos ao carregar a página
+        updateInvestmentValues(); // Atualizar os valores de investimento
+        fetchDollarRate(); // Buscar a cotação do dólar ao carregar a página
+    };
+</script>
+
+</body>
+</html>
